@@ -15,8 +15,8 @@ import PasskeyVerify from '@/components/PasskeyVerify.vue';
 
 defineOptions({
     layout: {
-        title: 'Log in to your account',
-        description: 'Enter your email and password below to log in',
+        title: 'Welcome back',
+        description: 'Enter your credentials to access your daily tasks and cadence.',
     },
 });
 
@@ -27,26 +27,29 @@ defineProps<{
 </script>
 
 <template>
-    <Head title="Log in" />
+    <Head title="Log in - Passo" />
 
     <div
         v-if="status"
-        class="mb-4 text-center text-sm font-medium text-green-600"
+        class="mb-4 rounded-xl bg-emerald-500/10 p-3 text-center text-xs font-medium text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
     >
         {{ status }}
     </div>
-
-    <PasskeyVerify />
 
     <Form
         v-bind="store.form()"
         :reset-on-success="['password']"
         v-slot="{ errors, processing }"
-        class="flex flex-col gap-6"
+        class="flex flex-col gap-4"
     >
-        <div class="grid gap-6">
-            <div class="grid gap-2">
-                <Label for="email">Email address</Label>
+        <!-- Email Field with Icon -->
+        <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+                <Label for="email" class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Email address
+                </Label>
+            </div>
+            <div class="relative">
                 <Input
                     id="email"
                     type="email"
@@ -55,56 +58,83 @@ defineProps<{
                     autofocus
                     :tabindex="1"
                     autocomplete="email"
-                    placeholder="email@example.com"
+                    placeholder="alex@example.com"
+                    class="rounded-xl pr-9 text-sm"
                 />
-                <InputError :message="errors.email" />
-            </div>
-
-            <div class="grid gap-2">
-                <div class="flex items-center justify-between">
-                    <Label for="password">Password</Label>
-                    <TextLink
-                        v-if="canResetPassword"
-                        :href="request()"
-                        class="text-sm"
-                        :tabindex="5"
-                    >
-                        Forgot your password?
-                    </TextLink>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground/60">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="20" height="16" x="2" y="4" rx="2"/>
+                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                    </svg>
                 </div>
-                <PasswordInput
-                    id="password"
-                    name="password"
-                    required
-                    :tabindex="2"
-                    autocomplete="current-password"
-                    placeholder="Password"
-                />
-                <InputError :message="errors.password" />
             </div>
-
-            <div class="flex items-center justify-between">
-                <Label for="remember" class="flex items-center space-x-3">
-                    <Checkbox id="remember" name="remember" :tabindex="3" />
-                    <span>Remember me</span>
-                </Label>
-            </div>
-
-            <Button
-                type="submit"
-                class="mt-4 w-full"
-                :tabindex="4"
-                :disabled="processing"
-                data-test="login-button"
-            >
-                <Spinner v-if="processing" />
-                Log in
-            </Button>
+            <InputError :message="errors.email" />
         </div>
 
-        <div class="text-muted-foreground text-center text-sm">
+        <!-- Password Field with Forgot Password Link -->
+        <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+                <Label for="password" class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Password
+                </Label>
+                <TextLink
+                    v-if="canResetPassword"
+                    :href="request()"
+                    class="text-xs text-[#b85c38] hover:underline"
+                    :tabindex="5"
+                >
+                    Forgot password?
+                </TextLink>
+            </div>
+            <PasswordInput
+                id="password"
+                name="password"
+                required
+                :tabindex="2"
+                autocomplete="current-password"
+                placeholder="••••••••••••"
+                class="rounded-xl text-sm"
+            />
+            <InputError :message="errors.password" />
+        </div>
+
+        <!-- Remember Me Checkbox -->
+        <div class="flex items-center space-x-2 pt-1">
+            <Checkbox id="remember" name="remember" :tabindex="3" class="rounded" />
+            <Label for="remember" class="text-xs text-muted-foreground cursor-pointer select-none">
+                Remember me for 30 days
+            </Label>
+        </div>
+
+        <!-- Primary Sign In Pill Button -->
+        <Button
+            type="submit"
+            class="mt-2 w-full rounded-full bg-[#b85c38] hover:bg-[#a34f2f] text-white text-xs h-10 shadow-xs font-semibold active:scale-98 transition-all"
+            :tabindex="4"
+            :disabled="processing"
+            data-test="login-button"
+        >
+            <Spinner v-if="processing" />
+            <span v-else class="flex items-center justify-center gap-1.5">
+                <span>Sign in to Passo</span>
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                    <polyline points="12 5 19 12 12 19"/>
+                </svg>
+            </span>
+        </Button>
+
+        <!-- Passkey Verification -->
+        <div class="pt-1">
+            <PasskeyVerify separator="Or sign in with passkey" />
+        </div>
+
+        <!-- Sign Up Link -->
+        <div class="text-center text-xs text-muted-foreground pt-1 border-t border-border/50 mt-1">
             Don't have an account?
-            <TextLink :href="register()" :tabindex="5">Sign up</TextLink>
+            <TextLink :href="register()" class="font-semibold text-[#b85c38] hover:underline ml-1" :tabindex="5">
+                Sign up
+            </TextLink>
         </div>
     </Form>
 </template>

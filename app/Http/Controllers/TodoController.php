@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Todo;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -11,9 +12,14 @@ class TodoController extends Controller
     /**
      * Display a listing of the resource.
      */
-   public function index(Request $request)
+    public function index(Request $request)
     {
-        $todos = $request->user()->todos()->latest()->get();
+        $user = $request->user();
+
+        // Advance recurring tasks whose next recurrence date has arrived
+        $this->advanceRecurringTodos($user);
+
+        $todos = $user->todos()->latest()->get();
 
         return Inertia::render('Todos/Index', [
             'todos' => $todos,
@@ -42,6 +48,11 @@ class TodoController extends Controller
             'recurrence' => 'nullable|string|max:50',
             'reminder_at' => 'nullable|date',
         ]);
+
+        // Recurring tasks do not require a specific deadline; they become due on their scheduled day.
+        if (!empty($validated['recurrence']) && $validated['recurrence'] !== 'none' && empty($validated['due_date'])) {
+            $validated['due_date'] = now()->toDateString();
+        }
 
         $request->user()->todos()->create($validated);
 
@@ -82,53 +93,26 @@ class TodoController extends Controller
             'completed' => 'sometimes|boolean',
         ]);
 
-        $wasCompleted = $todo->completed;
-        $willBeCompleted = $validated['completed'] ?? $wasCompleted;
+        $wasCompleted = (bool) $todo->completed;
+        $willBeCompleted = isset($validated['completed']) ? (bool) $validated['completed'] : $wasCompleted;
 
-        // If newly marked completed and recurring, automatically spawn next occurrence
-        if (!$wasCompleted && $willBeCompleted && $todo->recurrence && $todo->recurrence !== 'none') {
-            $baseDate = $todo->due_date ? \Carbon\Carbon::parse($todo->due_date) : now();
-            $recurrence = $todo->recurrence;
-            $nextDueDate = null;
+        // If recurring, maintain completion history on this single task
+        if ($todo->recurrence && $todo->recurrence !== 'none') {
+            $todayStr = now()->toDateString();
+            $history = is_array($todo->completed_dates) ? $todo->completed_dates : [];
 
-            if ($recurrence === 'daily') {
-                $nextDueDate = (clone $baseDate)->addDay();
-            } elseif ($recurrence === 'weekdays') {
-                $nextDueDate = (clone $baseDate)->addWeekday();
-            } elseif ($recurrence === 'weekly') {
-                $nextDueDate = (clone $baseDate)->addWeek();
-            } elseif ($recurrence === 'biweekly') {
-                $nextDueDate = (clone $baseDate)->addWeeks(2);
-            } elseif ($recurrence === 'monthly') {
-                $nextDueDate = (clone $baseDate)->addMonth();
-            } elseif (str_starts_with($recurrence, 'custom:')) {
-                $parts = explode(':', $recurrence);
-                $count = max(1, (int) ($parts[1] ?? 1));
-                $unit = $parts[2] ?? 'days';
-                $nextDueDate = match ($unit) {
-                    'weeks' => (clone $baseDate)->addWeeks($count),
-                    'months' => (clone $baseDate)->addMonths($count),
-                    default => (clone $baseDate)->addDays($count),
-                };
-            }
-
-            $nextReminder = null;
-            if ($todo->reminder_at && $nextDueDate && $todo->due_date) {
-                $diffInSeconds = \Carbon\Carbon::parse($todo->due_date)->diffInSeconds(\Carbon\Carbon::parse($todo->reminder_at), false);
-                $nextReminder = (clone $nextDueDate)->addSeconds($diffInSeconds);
-            }
-
-            if ($nextDueDate) {
-                $request->user()->todos()->create([
-                    'title' => $todo->title,
-                    'description' => $todo->description,
-                    'category' => $todo->category,
-                    'color' => $todo->color,
-                    'due_date' => $nextDueDate->toDateString(),
-                    'recurrence' => $todo->recurrence,
-                    'reminder_at' => $nextReminder,
-                    'completed' => false,
-                ]);
+            if (!$wasCompleted && $willBeCompleted) {
+                // Mark today's occurrence as completed; record in history
+                if (!in_array($todayStr, $history)) {
+                    $history[] = $todayStr;
+                }
+                $validated['completed_dates'] = $history;
+                $validated['completed'] = true;
+            } elseif ($wasCompleted && !$willBeCompleted) {
+                // Reopen today's occurrence; remove from today's history
+                $history = array_values(array_filter($history, fn($d) => $d !== $todayStr));
+                $validated['completed_dates'] = $history;
+                $validated['completed'] = false;
             }
         }
 
@@ -149,5 +133,129 @@ class TodoController extends Controller
         }
 
         return redirect()->back();
+    }
+
+    /**
+     * Advance recurring tasks when their scheduled recurrence date arrives.
+     * Prevents multiple active occurrences and preserves completion history.
+     */
+    protected function advanceRecurringTodos($user): void
+    {
+        $today = now()->startOfDay();
+        $todayStr = $today->toDateString();
+
+        $recurringTodos = $user->todos()
+            ->where('recurrence', '!=', 'none')
+            ->whereNotNull('recurrence')
+            ->orderBy('id', 'asc')
+            ->get();
+
+        // Prevent duplicate active tasks with same title & recurrence from old duplicate-spawning logic
+        $seen = [];
+        foreach ($recurringTodos as $todo) {
+            $key = mb_strtolower(trim($todo->title)) . '|' . ($todo->category ?? '') . '|' . $todo->recurrence;
+            if (isset($seen[$key])) {
+                $existing = $seen[$key];
+                // Keep the one with history or the newer one, delete duplicate
+                if (!empty($todo->completed_dates) && empty($existing->completed_dates)) {
+                    $existing->delete();
+                    $seen[$key] = $todo;
+                } else {
+                    $todo->delete();
+                    continue;
+                }
+            } else {
+                $seen[$key] = $todo;
+            }
+        }
+
+        // Check if scheduled recurrence date has arrived
+        foreach ($seen as $todo) {
+            if (!$todo->due_date) {
+                $todo->update(['due_date' => $todayStr]);
+                continue;
+            }
+
+            $dueDate = Carbon::parse($todo->due_date)->startOfDay();
+
+            // When a recurring task was completed, only activate when scheduled date arrives
+            if ($todo->completed) {
+                $nextDueDate = $this->calculateNextDueDate($todo->recurrence, $dueDate);
+
+                // If today has reached or passed the scheduled recurrence date, make active for new day
+                if ($today->gte($nextDueDate)) {
+                    // Fast-forward to current cycle if multiple intervals passed
+                    while ($nextDueDate->lt($today)) {
+                        $next = $this->calculateNextDueDate($todo->recurrence, $nextDueDate);
+                        if ($next->lte($nextDueDate)) {
+                            break;
+                        }
+                        if ($next->gt($today)) {
+                            break;
+                        }
+                        $nextDueDate = $next;
+                    }
+
+                    $updateData = [
+                        'completed' => false,
+                        'due_date' => $nextDueDate->toDateString(),
+                    ];
+
+                    // Advance reminder if one exists (keeping original time of day)
+                    if ($todo->reminder_at) {
+                        $origReminder = Carbon::parse($todo->reminder_at);
+                        $updateData['reminder_at'] = $nextDueDate->copy()->setTime(
+                            $origReminder->hour,
+                            $origReminder->minute,
+                            $origReminder->second
+                        );
+                    }
+
+                    $todo->update($updateData);
+                }
+            }
+        }
+    }
+
+    /**
+     * Calculate the next due date based on recurrence interval.
+     */
+    protected function calculateNextDueDate(string $recurrence, Carbon $baseDate): Carbon
+    {
+        $date = (clone $baseDate)->startOfDay();
+
+        if ($recurrence === 'daily') {
+            return $date->addDay();
+        }
+
+        if ($recurrence === 'weekdays') {
+            return $date->addWeekday();
+        }
+
+        if ($recurrence === 'weekly') {
+            return $date->addWeek();
+        }
+
+        if ($recurrence === 'biweekly') {
+            return $date->addWeeks(2);
+        }
+
+        if ($recurrence === 'monthly') {
+            return $date->addMonth();
+        }
+
+        if (str_starts_with($recurrence, 'custom:')) {
+            $parts = explode(':', $recurrence);
+            $count = max(1, (int) ($parts[1] ?? 1));
+            $unit = $parts[2] ?? 'days';
+
+            return match ($unit) {
+                'weeks' => $date->addWeeks($count),
+                'months' => $date->addMonths($count),
+                default => $date->addDays($count),
+            };
+        }
+
+        return $date->addDay();
     }
 }

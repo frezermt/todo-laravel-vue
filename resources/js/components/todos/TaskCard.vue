@@ -23,36 +23,37 @@ const emit = defineEmits<{
     (e: 'toggle', todo: Todo): void;
     (e: 'edit', todo: Todo): void;
     (e: 'delete', todo: Todo): void;
+    (e: 'select', todo: Todo): void;
 }>();
 
 // Due date formatting and status
 const dueDateInfo = computed(() => {
     if (!props.todo.due_date) return null;
-    
+
     const [year, month, day] = props.todo.due_date.split('-').map(Number);
     const dueDate = new Date(year, month - 1, day);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const diffTime = dueDate.getTime() - today.getTime();
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-    
+
     let label = '';
     let isOverdue = false;
     let isToday = false;
-    
+
     if (diffDays < 0 && !props.todo.completed) {
         isOverdue = true;
         label = diffDays === -1 ? 'Overdue (yesterday)' : `Overdue (${Math.abs(diffDays)}d ago)`;
     } else if (diffDays === 0) {
         isToday = true;
-        label = 'Due today';
+        label = 'Today';
     } else if (diffDays === 1) {
-        label = 'Due tomorrow';
+        label = 'Tomorrow';
     } else {
         label = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
-    
+
     return { label, isOverdue, isToday };
 });
 
@@ -65,18 +66,18 @@ const reminderInfo = computed(() => {
 const recurrenceLabel = computed(() => {
     if (!props.todo.recurrence || props.todo.recurrence === 'none') return null;
     const r = props.todo.recurrence;
-    if (r === 'daily') return 'Daily';
-    if (r === 'weekdays') return 'Weekdays';
-    if (r === 'weekly') return 'Weekly';
-    if (r === 'biweekly') return 'Every 2 wks';
-    if (r === 'monthly') return 'Monthly';
+    if (r === 'daily') return 'Repeats every day';
+    if (r === 'weekdays') return 'Repeats on weekdays';
+    if (r === 'weekly') return 'Repeats every week';
+    if (r === 'biweekly') return 'Repeats every 2 wks';
+    if (r === 'monthly') return 'Repeats every month';
     if (r.startsWith('custom:')) {
         const parts = r.split(':');
         const count = parts[1] || '1';
         const unit = parts[2] || 'days';
-        return `Every ${count} ${unit}`;
+        return `Repeats every ${count} ${unit}`;
     }
-    return r;
+    return `Repeats (${r})`;
 });
 
 const accentColor = computed(() => props.todo.color || '#b85c38');
@@ -84,35 +85,87 @@ const accentColor = computed(() => props.todo.color || '#b85c38');
 
 <template>
     <div
+        @click="emit('select', todo)"
         :class="[
-            'group relative flex flex-col justify-between overflow-hidden rounded-xl border bg-card p-4 transition-all duration-200 ease-out',
+            'group relative flex w-full cursor-pointer items-start justify-between gap-4 overflow-hidden rounded-xl border bg-card p-4 transition-all duration-200 ease-out select-none',
             todo.completed
-                ? 'border-border/50 bg-muted/20 opacity-75'
-                : 'border-border/80 hover:border-border hover:shadow-sm hover:-translate-y-0.5',
+                ? 'border-border/50 bg-muted/20 opacity-75 hover:opacity-90'
+                : 'border-border/80 hover:border-border hover:shadow-xs hover:-translate-y-0.5',
         ]"
     >
-        <!-- Color Accent Strip (Left Bar) -->
+        <!-- Left Vertical Color Accent Line -->
         <div
             class="absolute top-0 bottom-0 left-0 w-1 transition-colors duration-200"
             :style="{ backgroundColor: accentColor }"
         />
 
-        <!-- Card Top: Tags & Actions -->
-        <div>
-            <div class="flex items-center justify-between gap-2 pl-1.5">
-                <!-- Badges: Category, Due Date, Recurrence, Reminder -->
-                <div class="flex flex-wrap items-center gap-1.5">
+        <!-- Left Side: Circular Checkbox + Task Details Content -->
+        <div class="flex min-w-0 flex-1 items-start gap-3 pl-1.5">
+            <!-- Circular Checkbox Button -->
+            <button
+                type="button"
+                @click.stop="emit('toggle', todo)"
+                :aria-label="todo.completed ? 'Mark incomplete' : 'Mark complete'"
+                :class="[
+                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all duration-200 ease-out active:scale-85 shadow-2xs',
+                    todo.completed
+                        ? 'border-transparent text-white'
+                        : 'border-[#ccc6bb] hover:border-[#b85c38] hover:bg-muted/50 dark:border-[#423d37]',
+                ]"
+                :style="todo.completed ? { backgroundColor: accentColor } : {}"
+            >
+                <svg
+                    v-if="todo.completed"
+                    class="h-3 w-3 stroke-white"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </button>
+
+            <!-- Main Content Area -->
+            <div class="min-w-0 flex-1">
+                <!-- Title -->
+                <h3
+                    :class="[
+                        'text-sm font-semibold leading-snug tracking-tight transition-colors duration-200',
+                        todo.completed ? 'text-muted-foreground line-through' : 'text-foreground'
+                    ]"
+                >
+                    {{ todo.title }}
+                </h3>
+
+                <!-- Description snippet -->
+                <p
+                    v-if="todo.description"
+                    :class="[
+                        'mt-1 text-xs leading-relaxed transition-colors duration-200 line-clamp-1',
+                        todo.completed ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground'
+                    ]"
+                >
+                    {{ todo.description }}
+                </p>
+
+                <!-- Metadata Badges Row -->
+                <div class="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <!-- Category Badge -->
                     <span
                         v-if="todo.category"
-                        class="inline-flex items-center rounded-full border border-border/70 bg-secondary/50 px-2.5 py-0.5 text-[11px] font-medium tracking-wide uppercase text-foreground/80 transition-colors"
+                        class="inline-flex items-center gap-1 rounded-full border border-border/70 bg-secondary/50 px-2.5 py-0.5 font-medium uppercase tracking-wider text-foreground/80"
                     >
+                        <span class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: accentColor }" />
                         {{ todo.category }}
                     </span>
 
+                    <!-- Due Date Badge -->
                     <span
                         v-if="dueDateInfo"
                         :class="[
-                            'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors',
+                            'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-medium transition-colors',
                             dueDateInfo.isOverdue
                                 ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300'
                                 : dueDateInfo.isToday
@@ -129,11 +182,23 @@ const accentColor = computed(() => props.todo.color || '#b85c38');
                         {{ dueDateInfo.label }}
                     </span>
 
-                    <!-- Recurring Badge -->
+                    <!-- Alarm / Reminder Badge -->
+                    <span
+                        v-if="reminderInfo"
+                        class="inline-flex items-center gap-1 rounded-full border border-amber-300/60 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40 px-2 py-0.5 font-medium text-amber-800 dark:text-amber-300"
+                        title="Alarm set"
+                    >
+                        <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                        </svg>
+                        Reminder: {{ reminderInfo }}
+                    </span>
+
+                    <!-- Recurrence Badge -->
                     <span
                         v-if="recurrenceLabel"
-                        class="inline-flex items-center gap-1 rounded-full border border-border/70 bg-secondary/40 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-                        :title="`Recurring: ${recurrenceLabel}`"
+                        class="inline-flex items-center gap-1 rounded-full border border-border/70 bg-secondary/40 px-2.5 py-0.5 font-medium text-muted-foreground"
                     >
                         <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="m17 2 4 4-4 4"/>
@@ -143,116 +208,37 @@ const accentColor = computed(() => props.todo.color || '#b85c38');
                         </svg>
                         {{ recurrenceLabel }}
                     </span>
-
-                    <!-- Alarm / Reminder Badge -->
-                    <span
-                        v-if="reminderInfo"
-                        class="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300"
-                        title="Alarm reminder set"
-                    >
-                        <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-                        </svg>
-                        {{ reminderInfo }}
-                    </span>
-                </div>
-
-                <!-- Pill-shaped Action Buttons -->
-                <div class="flex items-center gap-1">
-                    <button
-                        type="button"
-                        @click="emit('edit', todo)"
-                        aria-label="Edit task"
-                        title="Edit task"
-                        class="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-all duration-200 ease-out hover:bg-secondary hover:text-foreground active:scale-90"
-                    >
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                            <path d="m15 5 4 4"/>
-                        </svg>
-                    </button>
-                    <button
-                        type="button"
-                        @click="emit('delete', todo)"
-                        aria-label="Delete task"
-                        title="Delete task"
-                        class="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 transition-all duration-200 ease-out hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:scale-90"
-                    >
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 6h18"/>
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                            <line x1="10" x2="10" y1="11" y2="17"/>
-                            <line x1="14" x2="14" y1="11" y2="17"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Task Title & Checkbox Area -->
-            <div class="mt-3 flex items-start gap-3 pl-1.5">
-                <!-- Smooth Pill / Circular Checkbox Button -->
-                <button
-                    type="button"
-                    @click="emit('toggle', todo)"
-                    :aria-label="todo.completed ? 'Mark incomplete' : 'Mark complete'"
-                    :class="[
-                        'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all duration-200 ease-out active:scale-85 shadow-2xs',
-                        todo.completed
-                            ? 'border-transparent text-white'
-                            : 'border-[#ccc6bb] hover:border-[#b85c38] hover:bg-muted/50 dark:border-[#423d37]',
-                    ]"
-                    :style="todo.completed ? { backgroundColor: accentColor } : {}"
-                >
-                    <svg
-                        v-if="todo.completed"
-                        class="h-3 w-3 stroke-white"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke-width="3"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                </button>
-
-                <!-- Title and Description -->
-                <div class="min-w-0 flex-1">
-                    <h3
-                        :class="[
-                            'text-sm font-medium leading-snug tracking-tight transition-colors duration-200',
-                            todo.completed ? 'text-muted-foreground line-through' : 'text-foreground'
-                        ]"
-                    >
-                        {{ todo.title }}
-                    </h3>
-                    <p
-                        v-if="todo.description"
-                        :class="[
-                            'mt-1.5 text-xs leading-relaxed transition-colors duration-200',
-                            todo.completed ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground'
-                        ]"
-                    >
-                        {{ todo.description }}
-                    </p>
                 </div>
             </div>
         </div>
 
-        <!-- Card Footer: Metadata & Color Dot -->
-        <div class="mt-4 flex items-center justify-between border-t border-border/40 pt-2.5 pl-1.5 text-[11px] text-muted-foreground/60">
-            <span class="inline-flex items-center gap-1.5">
-                <span
-                    class="h-2 w-2 rounded-full ring-1 ring-border/50"
-                    :style="{ backgroundColor: accentColor }"
-                />
-                <span>{{ todo.color ? (todo.category || 'Task') : 'Standard' }}</span>
-            </span>
-            <time :datetime="todo.created_at">
-                {{ new Date(todo.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
-            </time>
+        <!-- Right Side: Quick Action Buttons -->
+        <div class="flex shrink-0 items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+            <button
+                type="button"
+                @click.stop="emit('edit', todo)"
+                aria-label="Edit task"
+                title="Edit task"
+                class="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-all duration-200 hover:bg-secondary hover:text-foreground active:scale-90"
+            >
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                    <path d="m15 5 4 4"/>
+                </svg>
+            </button>
+            <button
+                type="button"
+                @click.stop="emit('delete', todo)"
+                aria-label="Delete task"
+                title="Delete task"
+                class="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 transition-all duration-200 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:scale-90"
+            >
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"/>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                </svg>
+            </button>
         </div>
     </div>
 </template>

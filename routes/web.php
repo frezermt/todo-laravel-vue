@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Route;
 Route::inertia('/', 'Welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    Route::redirect('dashboard', '/todos')->name('dashboard');
     Route::resource('todos', TodoController::class)->only(['index', 'store', 'update', 'destroy']);
 });
 

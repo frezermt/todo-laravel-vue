@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
-import PlaceholderPattern from '@/components/PlaceholderPattern.vue';
+import { onMounted } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
 import { dashboard } from '@/routes';
+
+onMounted(() => {
+    router.visit('/todos');
+});
 
 defineOptions({
     layout: {

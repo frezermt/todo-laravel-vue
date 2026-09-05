@@ -25,6 +25,7 @@ class Todo extends Model
         'recurrence',
         'reminder_at',
         'completed',
+        'completed_dates',
     ];
 
     /**
@@ -38,6 +39,7 @@ class Todo extends Model
             'completed' => 'boolean',
             'due_date' => 'date:Y-m-d',
             'reminder_at' => 'datetime:Y-m-d H:i:s',
+            'completed_dates' => 'array',
         ];
     }
 
