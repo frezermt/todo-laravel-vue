@@ -41,8 +41,9 @@ defineProps<Props>();
     <DropdownMenuSeparator />
     <DropdownMenuItem :as-child="true">
         <Link
-            class="block w-full cursor-pointer"
-            :href="logout()"
+            class="flex w-full items-center cursor-pointer text-left"
+            :href="logout().url"
+            method="post"
             @click="handleLogout"
             as="button"
             data-test="logout-button"
