@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: peak-event-eth
+    name: todo-laravel-vue
     runtime: docker
     plan: free
     region: oregon
@@ -8,13 +8,13 @@ services:
     healthCheckPath: /up
     envVars:
       - key: APP_NAME
-        value: "Peak Event"
+        value: "Passo"
       - key: APP_ENV
         value: production
       - key: APP_DEBUG
         value: "false"
       - key: APP_URL
-        sync: false
+        value: https://todo-laravel-vue.onrender.com
       - key: APP_KEY
         generateValue: true
       - key: DB_CONNECTION
